@@ -2155,21 +2155,48 @@ nghttp3_ssize nghttp3_conn_on_headers(nghttp3_conn *conn,
   return conn_decode_headers(conn, stream, src, srclen, fin, ts);
 }
 
+static int conn_check_settings_id_dup(nghttp3_conn *conn, uint64_t id) {
+  size_t i;
+
+  if (id < 64) {
+    if (conn->rx.settings_idmask & (1ULL << id)) {
+      return NGHTTP3_ERR_H3_SETTINGS_ERROR;
+    }
+
+    conn->rx.settings_idmask |= 1ULL << id;
+
+    return 0;
+  }
+
+  for (i = 0; i < conn->rx.settings_idslen; ++i) {
+    if (conn->rx.settings_ids[i] == id) {
+      return NGHTTP3_ERR_H3_SETTINGS_ERROR;
+    }
+  }
+
+  if (conn->rx.settings_idslen < nghttp3_arraylen(conn->rx.settings_ids)) {
+    conn->rx.settings_ids[conn->rx.settings_idslen++] = id;
+  }
+
+  return 0;
+}
+
 int nghttp3_conn_on_settings_entry_received(nghttp3_conn *conn,
                                             const nghttp3_frame_settings *fr) {
   const nghttp3_settings_entry *ent = &fr->iv[0];
   nghttp3_proto_settings *dest = &conn->remote.settings;
+  int rv;
 
-  /* TODO Check for duplicates */
+  rv = conn_check_settings_id_dup(conn, ent->id);
+  if (rv != 0) {
+    return rv;
+  }
+
   switch (ent->id) {
   case NGHTTP3_SETTINGS_ID_MAX_FIELD_SECTION_SIZE:
     dest->max_field_section_size = ent->value;
     break;
   case NGHTTP3_SETTINGS_ID_QPACK_MAX_TABLE_CAPACITY:
-    if (dest->qpack_max_dtable_capacity != 0) {
-      return NGHTTP3_ERR_H3_SETTINGS_ERROR;
-    }
-
     if (ent->value == 0) {
       break;
     }
@@ -2186,10 +2213,6 @@ int nghttp3_conn_on_settings_entry_received(nghttp3_conn *conn,
                                                   (size_t)ent->value);
     break;
   case NGHTTP3_SETTINGS_ID_QPACK_BLOCKED_STREAMS:
-    if (dest->qpack_blocked_streams != 0) {
-      return NGHTTP3_ERR_H3_SETTINGS_ERROR;
-    }
-
     if (ent->value == 0) {
       break;
     }
@@ -2212,11 +2235,6 @@ int nghttp3_conn_on_settings_entry_received(nghttp3_conn *conn,
 
     switch (ent->value) {
     case 0:
-      if (dest->enable_connect_protocol) {
-        return NGHTTP3_ERR_H3_SETTINGS_ERROR;
-      }
-
-      break;
     case 1:
       break;
     default:
