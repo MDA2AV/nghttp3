@@ -7176,6 +7176,26 @@ void test_nghttp3_conn_push(void) {
 
   nghttp3_conn_del(conn);
 
+  /* The first MAX_PUSH_ID from client may be 0. */
+  nghttp3_buf_reset(&buf);
+  setup_default_server(&conn);
+
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_STREAM_TYPE_CONTROL);
+
+  nghttp3_write_frame(&buf, &fr);
+
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_FRAME_MAX_PUSH_ID);
+  buf.last = nghttp3_put_uvarint(buf.last, nghttp3_put_uvarintlen(0));
+  buf.last = nghttp3_put_uvarint(buf.last, 0);
+
+  nconsumed = nghttp3_conn_read_stream2(conn, 2, buf.pos, nghttp3_buf_len(&buf),
+                                        /* fin = */ 0, 0);
+
+  assert_ptrdiff((nghttp3_ssize)nghttp3_buf_len(&buf), ==, nconsumed);
+  assert_uint64(1, ==, conn->local.uni.max_pushes);
+
+  nghttp3_conn_del(conn);
+
   /* Receiving smaller MAX_PUSH_ID from client is treated as error. */
   nghttp3_buf_reset(&buf);
   setup_default_server(&conn);
@@ -7195,7 +7215,38 @@ void test_nghttp3_conn_push(void) {
   nconsumed = nghttp3_conn_read_stream2(conn, 2, buf.pos, nghttp3_buf_len(&buf),
                                         /* fin = */ 0, 0);
 
-  assert_ptrdiff(NGHTTP3_ERR_H3_FRAME_ERROR, ==, nconsumed);
+  assert_ptrdiff(NGHTTP3_ERR_H3_ID_ERROR, ==, nconsumed);
+
+  nghttp3_conn_del(conn);
+
+  /* Receiving smaller MAX_PUSH_ID from client in 1 byte at a time is
+     treated as error when its last byte arrives. */
+  nghttp3_buf_reset(&buf);
+  setup_default_server(&conn);
+
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_STREAM_TYPE_CONTROL);
+
+  nghttp3_write_frame(&buf, &fr);
+
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_FRAME_MAX_PUSH_ID);
+  buf.last = nghttp3_put_uvarint(buf.last, nghttp3_put_uvarintlen(128));
+  buf.last = nghttp3_put_uvarint(buf.last, 128);
+
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_FRAME_MAX_PUSH_ID);
+  buf.last = nghttp3_put_uvarint(buf.last, nghttp3_put_uvarintlen(127));
+  buf.last = nghttp3_put_uvarint(buf.last, 127);
+
+  for (i = 0; i < nghttp3_buf_len(&buf) - 1; ++i) {
+    nconsumed = nghttp3_conn_read_stream2(conn, 2, buf.pos + i, 1,
+                                          /* fin = */ 0, 0);
+
+    assert_ptrdiff(1, ==, nconsumed);
+  }
+
+  nconsumed = nghttp3_conn_read_stream2(conn, 2, buf.pos + i, 1,
+                                        /* fin = */ 0, 0);
+
+  assert_ptrdiff(NGHTTP3_ERR_H3_ID_ERROR, ==, nconsumed);
 
   nghttp3_conn_del(conn);
 

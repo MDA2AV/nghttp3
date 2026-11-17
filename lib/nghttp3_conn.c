@@ -1148,7 +1148,7 @@ nghttp3_ssize nghttp3_conn_read_control(nghttp3_conn *conn,
       }
 
       if (conn->local.uni.max_pushes > rvint->acc + 1) {
-        return NGHTTP3_ERR_H3_FRAME_ERROR;
+        return NGHTTP3_ERR_H3_ID_ERROR;
       }
 
       /* Receiving MAX_PUSH_ID more than once is suspicious regardless
