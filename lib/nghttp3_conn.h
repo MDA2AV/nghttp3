@@ -47,6 +47,10 @@
    blocked streams for QPACK encoder. */
 #define NGHTTP3_QPACK_ENCODER_MAX_BLOCK_STREAMS 100
 
+/* NGHTTP3_MAX_SETTINGS_IDS is the maximum number of SETTINGS
+   identifiers not less than 64 that are checked for duplicates. */
+#define NGHTTP3_MAX_SETTINGS_IDS 16
+
 /* NGHTTP3_CONN_FLAG_NONE indicates that no flag is set. */
 #define NGHTTP3_CONN_FLAG_NONE 0x0000U
 /* NGHTTP3_CONN_FLAG_SETTINGS_RECVED is set when SETTINGS frame has
@@ -129,6 +133,18 @@ struct nghttp3_conn {
     int64_t goaway_id;
 
     int64_t max_stream_id_bidi;
+
+    /* settings_idmask is the set of SETTINGS identifiers less than
+       64 that have been received.  The bit at the position of an
+       identifier is set when it is received. */
+    uint64_t settings_idmask;
+    /* settings_ids contains the received SETTINGS identifiers that
+       are not less than 64.  Once it is full, the further
+       identifiers are not checked for duplicates. */
+    uint64_t settings_ids[NGHTTP3_MAX_SETTINGS_IDS];
+    /* settings_idslen is the number of identifiers in
+       settings_ids. */
+    size_t settings_idslen;
 
     union {
       struct {
