@@ -4434,6 +4434,28 @@ void test_nghttp3_conn_recv_goaway(void) {
 
   nghttp3_conn_del(conn);
 
+  /* Receive GOAWAY that claims a payload longer than a Stream ID */
+  nghttp3_buf_reset(&buf);
+  setup_default_server(&conn);
+
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_STREAM_TYPE_CONTROL);
+
+  fr.settings = (nghttp3_frame_settings){
+    .type = NGHTTP3_FRAME_SETTINGS,
+  };
+
+  nghttp3_write_frame(&buf, &fr);
+
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_FRAME_GOAWAY);
+  buf.last = nghttp3_put_uvarint(buf.last, 0x40000000);
+
+  nconsumed = nghttp3_conn_read_stream2(conn, 2, buf.pos, nghttp3_buf_len(&buf),
+                                        /* fin = */ 0, 0);
+
+  assert_ptrdiff(NGHTTP3_ERR_H3_EXCESSIVE_LOAD, ==, nconsumed);
+
+  nghttp3_conn_del(conn);
+
   /* Read GOAWAY in 1 byte at a time */
   nghttp3_buf_reset(&buf);
   setup_default_server(&conn);
@@ -6305,6 +6327,25 @@ void test_nghttp3_conn_push(void) {
   }
 
   assert_uint64(0, ==, conn->glitch_rlim.tokens);
+
+  nconsumed = nghttp3_conn_read_stream2(conn, 2, buf.pos, nghttp3_buf_len(&buf),
+                                        /* fin = */ 0, 0);
+
+  assert_ptrdiff(NGHTTP3_ERR_H3_EXCESSIVE_LOAD, ==, nconsumed);
+
+  nghttp3_conn_del(conn);
+
+  /* Receiving MAX_PUSH_ID that claims a payload longer than a Push ID
+     from client is treated as error. */
+  nghttp3_buf_reset(&buf);
+  setup_default_server(&conn);
+
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_STREAM_TYPE_CONTROL);
+
+  nghttp3_write_frame(&buf, &fr);
+
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_FRAME_MAX_PUSH_ID);
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_MAX_VARINTLEN + 1);
 
   nconsumed = nghttp3_conn_read_stream2(conn, 2, buf.pos, nghttp3_buf_len(&buf),
                                         /* fin = */ 0, 0);

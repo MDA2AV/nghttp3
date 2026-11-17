@@ -813,6 +813,13 @@ nghttp3_ssize nghttp3_conn_read_control(nghttp3_conn *conn,
         if (rstate->left == 0) {
           return NGHTTP3_ERR_H3_FRAME_ERROR;
         }
+
+        /* The payload is a single variable-length integer.  Do not
+           wait for the bytes that a larger length claims. */
+        if (rstate->left > NGHTTP3_MAX_VARINTLEN) {
+          return NGHTTP3_ERR_H3_EXCESSIVE_LOAD;
+        }
+
         rstate->state = NGHTTP3_CTRL_STREAM_STATE_GOAWAY;
         break;
       case NGHTTP3_FRAME_MAX_PUSH_ID:
@@ -822,6 +829,13 @@ nghttp3_ssize nghttp3_conn_read_control(nghttp3_conn *conn,
         if (rstate->left == 0) {
           return NGHTTP3_ERR_H3_FRAME_ERROR;
         }
+
+        /* The payload is a single variable-length integer.  Do not
+           wait for the bytes that a larger length claims. */
+        if (rstate->left > NGHTTP3_MAX_VARINTLEN) {
+          return NGHTTP3_ERR_H3_EXCESSIVE_LOAD;
+        }
+
         rstate->state = NGHTTP3_CTRL_STREAM_STATE_MAX_PUSH_ID;
         break;
       case NGHTTP3_FRAME_PRIORITY_UPDATE:
