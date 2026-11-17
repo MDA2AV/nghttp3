@@ -53,6 +53,10 @@
    variable-length integer encoding. */
 #define NGHTTP3_MAX_VARINT ((1ULL << 62) - 1)
 
+/* NGHTTP3_MAX_VARINTLEN is the maximum number of bytes that a
+   variable-length integer can occupy. */
+#define NGHTTP3_MAX_VARINTLEN 8
+
 #define nghttp3_max_def(SUFFIX, T)                                             \
   static inline T nghttp3_max_##SUFFIX(T a, T b) { return a < b ? b : a; }
 
