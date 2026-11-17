@@ -5026,6 +5026,118 @@ void test_nghttp3_conn_recv_goaway(void) {
 
   nghttp3_conn_del(conn);
 
+  /* Receive GOAWAY with truncated Stream ID */
+  nghttp3_buf_reset(&buf);
+  setup_default_server(&conn);
+
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_STREAM_TYPE_CONTROL);
+
+  fr.settings = (nghttp3_frame_settings){
+    .type = NGHTTP3_FRAME_SETTINGS,
+  };
+
+  nghttp3_write_frame(&buf, &fr);
+
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_FRAME_GOAWAY);
+  buf.last = nghttp3_put_uvarint(buf.last, nghttp3_put_uvarintlen(64) - 1);
+  buf.last = nghttp3_put_uvarint(buf.last, 64);
+
+  nconsumed = nghttp3_conn_read_stream2(conn, 2, buf.pos, nghttp3_buf_len(&buf),
+                                        /* fin = */ 0, 0);
+
+  assert_ptrdiff(NGHTTP3_ERR_H3_FRAME_ERROR, ==, nconsumed);
+
+  nghttp3_conn_del(conn);
+
+  /* Receive GOAWAY with extra bytes after Stream ID */
+  nghttp3_buf_reset(&buf);
+  setup_default_server(&conn);
+
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_STREAM_TYPE_CONTROL);
+
+  fr.settings = (nghttp3_frame_settings){
+    .type = NGHTTP3_FRAME_SETTINGS,
+  };
+
+  nghttp3_write_frame(&buf, &fr);
+
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_FRAME_GOAWAY);
+  buf.last = nghttp3_put_uvarint(buf.last, 2);
+  buf.last = nghttp3_put_uvarint(buf.last, 0);
+  *buf.last++ = 0;
+
+  nconsumed = nghttp3_conn_read_stream2(conn, 2, buf.pos, nghttp3_buf_len(&buf),
+                                        /* fin = */ 0, 0);
+
+  assert_ptrdiff(NGHTTP3_ERR_H3_FRAME_ERROR, ==, nconsumed);
+
+  nghttp3_conn_del(conn);
+
+  /* Receive GOAWAY with extra bytes after Stream ID in 1 byte at a
+     time.  It is treated as error as soon as Stream ID is read, and
+     shutdown callback is not called. */
+  nghttp3_buf_reset(&buf);
+  opts = (conn_options){
+    .callbacks = &callbacks,
+    .user_data = &ud,
+  };
+
+  setup_default_server_with_options(&conn, opts);
+
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_STREAM_TYPE_CONTROL);
+
+  fr.settings = (nghttp3_frame_settings){
+    .type = NGHTTP3_FRAME_SETTINGS,
+  };
+
+  nghttp3_write_frame(&buf, &fr);
+
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_FRAME_GOAWAY);
+  buf.last = nghttp3_put_uvarint(buf.last, nghttp3_put_uvarintlen(64) + 1);
+  buf.last = nghttp3_put_uvarint(buf.last, 64);
+
+  ud.shutdown_cb.ncalled = 0;
+
+  for (i = 0; i < nghttp3_buf_len(&buf) - 1; ++i) {
+    nconsumed = nghttp3_conn_read_stream2(conn, 2, buf.pos + i, 1,
+                                          /* fin = */ 0, 0);
+
+    assert_ptrdiff(1, ==, nconsumed);
+  }
+
+  nconsumed = nghttp3_conn_read_stream2(conn, 2, buf.pos + i, 1,
+                                        /* fin = */ 0, 0);
+
+  assert_ptrdiff(NGHTTP3_ERR_H3_FRAME_ERROR, ==, nconsumed);
+  assert_false(conn->flags & NGHTTP3_CONN_FLAG_GOAWAY_RECVED);
+  assert_size(0, ==, ud.shutdown_cb.ncalled);
+
+  nghttp3_conn_del(conn);
+
+  /* Client receives GOAWAY with extra bytes after Stream ID */
+  nghttp3_buf_reset(&buf);
+  setup_default_client(&conn);
+
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_STREAM_TYPE_CONTROL);
+
+  fr.settings = (nghttp3_frame_settings){
+    .type = NGHTTP3_FRAME_SETTINGS,
+  };
+
+  nghttp3_write_frame(&buf, &fr);
+
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_FRAME_GOAWAY);
+  buf.last = nghttp3_put_uvarint(buf.last, 2);
+  buf.last = nghttp3_put_uvarint(buf.last, 0);
+  *buf.last++ = 0;
+
+  nconsumed = nghttp3_conn_read_stream2(conn, 3, buf.pos, nghttp3_buf_len(&buf),
+                                        /* fin = */ 0, 0);
+
+  assert_ptrdiff(NGHTTP3_ERR_H3_FRAME_ERROR, ==, nconsumed);
+
+  nghttp3_conn_del(conn);
+
   /* Client receives GOAWAY with server bidirectional stream ID */
   nghttp3_buf_reset(&buf);
   setup_default_client(&conn);
@@ -7209,6 +7321,27 @@ void test_nghttp3_conn_push(void) {
 
   buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_FRAME_MAX_PUSH_ID);
   buf.last = nghttp3_put_uvarint(buf.last, 0);
+
+  nconsumed = nghttp3_conn_read_stream2(conn, 2, buf.pos, nghttp3_buf_len(&buf),
+                                        /* fin = */ 0, 0);
+
+  assert_ptrdiff(NGHTTP3_ERR_H3_FRAME_ERROR, ==, nconsumed);
+
+  nghttp3_conn_del(conn);
+
+  /* Receiving MAX_PUSH_ID with extra bytes after Push ID from client
+     is treated as error. */
+  nghttp3_buf_reset(&buf);
+  setup_default_server(&conn);
+
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_STREAM_TYPE_CONTROL);
+
+  nghttp3_write_frame(&buf, &fr);
+
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_FRAME_MAX_PUSH_ID);
+  buf.last = nghttp3_put_uvarint(buf.last, 2);
+  buf.last = nghttp3_put_uvarint(buf.last, 5);
+  *buf.last++ = 0;
 
   nconsumed = nghttp3_conn_read_stream2(conn, 2, buf.pos, nghttp3_buf_len(&buf),
                                         /* fin = */ 0, 0);
