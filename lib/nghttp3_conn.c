@@ -872,7 +872,11 @@ nghttp3_ssize nghttp3_conn_read_control(nghttp3_conn *conn,
         rstate->state = NGHTTP3_CTRL_STREAM_STATE_ORIGIN_ORIGIN_LEN;
 
         break;
-      case NGHTTP3_FRAME_CANCEL_PUSH: /* We do not support push */
+      case NGHTTP3_FRAME_CANCEL_PUSH:
+        /* We do not support push.  A server never promises a push,
+           and a client never allows one, so every push ID is
+           invalid. */
+        return NGHTTP3_ERR_H3_ID_ERROR;
       case NGHTTP3_FRAME_DATA:
       case NGHTTP3_FRAME_HEADERS:
       case NGHTTP3_FRAME_PUSH_PROMISE:
