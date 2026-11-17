@@ -939,6 +939,109 @@ void test_nghttp3_conn_read_control(void) {
 
   nghttp3_conn_del(conn);
 
+  /* Receiving the same SETTINGS identifier twice is treated as
+     error. */
+  nghttp3_buf_reset(&buf);
+
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_STREAM_TYPE_CONTROL);
+
+  fr.settings = (nghttp3_frame_settings){
+    .type = NGHTTP3_FRAME_SETTINGS,
+    .niv = 2,
+    .iv = ents,
+  };
+  ents[0] = (nghttp3_settings_entry){
+    .id = NGHTTP3_SETTINGS_ID_MAX_FIELD_SECTION_SIZE,
+    .value = 65536,
+  };
+  ents[1] = (nghttp3_settings_entry){
+    .id = NGHTTP3_SETTINGS_ID_MAX_FIELD_SECTION_SIZE,
+    .value = 65536,
+  };
+
+  nghttp3_write_frame(&buf, &fr);
+
+  opts = (conn_options){
+    .callbacks = &callbacks,
+    .user_data = &ud,
+  };
+
+  setup_default_server_with_options(&conn, opts);
+
+  nconsumed = nghttp3_conn_read_stream2(conn, 2, buf.pos, nghttp3_buf_len(&buf),
+                                        /* fin = */ 0, 0);
+
+  assert_ptrdiff(NGHTTP3_ERR_H3_SETTINGS_ERROR, ==, nconsumed);
+
+  nghttp3_conn_del(conn);
+
+  /* Receiving the same unknown SETTINGS identifier twice is treated
+     as error. */
+  nghttp3_buf_reset(&buf);
+
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_STREAM_TYPE_CONTROL);
+
+  fr.settings = (nghttp3_frame_settings){
+    .type = NGHTTP3_FRAME_SETTINGS,
+    .niv = 3,
+    .iv = ents,
+  };
+  ents[0] = (nghttp3_settings_entry){
+    .id = 0x40,
+  };
+  ents[1] = (nghttp3_settings_entry){
+    .id = 1000000009,
+  };
+  ents[2] = (nghttp3_settings_entry){
+    .id = 0x40,
+  };
+
+  nghttp3_write_frame(&buf, &fr);
+
+  opts = (conn_options){
+    .callbacks = &callbacks,
+    .user_data = &ud,
+  };
+
+  setup_default_server_with_options(&conn, opts);
+
+  nconsumed = nghttp3_conn_read_stream2(conn, 2, buf.pos, nghttp3_buf_len(&buf),
+                                        /* fin = */ 0, 0);
+
+  assert_ptrdiff(NGHTTP3_ERR_H3_SETTINGS_ERROR, ==, nconsumed);
+
+  nghttp3_conn_del(conn);
+
+  /* Receiving more unknown SETTINGS identifiers than
+     NGHTTP3_MAX_SETTINGS_IDS */
+  nghttp3_buf_reset(&buf);
+
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_STREAM_TYPE_CONTROL);
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_FRAME_SETTINGS);
+  buf.last = nghttp3_put_uvarint(
+    buf.last, (NGHTTP3_MAX_SETTINGS_IDS + 1) *
+                (nghttp3_put_uvarintlen(0x40) + nghttp3_put_uvarintlen(0)));
+
+  for (i = 0; i < NGHTTP3_MAX_SETTINGS_IDS + 1; ++i) {
+    buf.last = nghttp3_put_uvarint(buf.last, 0x40 + i);
+    buf.last = nghttp3_put_uvarint(buf.last, 0);
+  }
+
+  opts = (conn_options){
+    .callbacks = &callbacks,
+    .user_data = &ud,
+  };
+
+  setup_default_server_with_options(&conn, opts);
+
+  nconsumed = nghttp3_conn_read_stream2(conn, 2, buf.pos, nghttp3_buf_len(&buf),
+                                        /* fin = */ 0, 0);
+
+  assert_ptrdiff((nghttp3_ssize)nghttp3_buf_len(&buf), ==, nconsumed);
+  assert_size(NGHTTP3_MAX_SETTINGS_IDS, ==, conn->rx.settings_idslen);
+
+  nghttp3_conn_del(conn);
+
   /* Receive ENABLE_CONNECT_PROTOCOL = 1 */
   nghttp3_buf_reset(&buf);
 
