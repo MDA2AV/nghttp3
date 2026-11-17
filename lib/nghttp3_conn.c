@@ -876,7 +876,10 @@ nghttp3_ssize nghttp3_conn_read_control(nghttp3_conn *conn,
         rstate->state = NGHTTP3_CTRL_STREAM_STATE_SETTINGS;
         break;
       case NGHTTP3_FRAME_GOAWAY:
-        if (rstate->left == 0) {
+        /* The payload is a single variable-length integer, so a
+           length of 0 or above 8 cannot be valid.  See RFC 9114,
+           Section 7.1. */
+        if (rstate->left == 0 || rstate->left > NGHTTP3_MAX_VARINTLEN) {
           return NGHTTP3_ERR_H3_FRAME_ERROR;
         }
         rstate->state = NGHTTP3_CTRL_STREAM_STATE_GOAWAY;
@@ -885,7 +888,10 @@ nghttp3_ssize nghttp3_conn_read_control(nghttp3_conn *conn,
         if (!conn->server) {
           return NGHTTP3_ERR_H3_FRAME_UNEXPECTED;
         }
-        if (rstate->left == 0) {
+        /* The payload is a single variable-length integer, so a
+           length of 0 or above 8 cannot be valid.  See RFC 9114,
+           Section 7.1. */
+        if (rstate->left == 0 || rstate->left > NGHTTP3_MAX_VARINTLEN) {
           return NGHTTP3_ERR_H3_FRAME_ERROR;
         }
         rstate->state = NGHTTP3_CTRL_STREAM_STATE_MAX_PUSH_ID;

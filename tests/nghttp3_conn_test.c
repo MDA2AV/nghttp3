@@ -5052,6 +5052,100 @@ void test_nghttp3_conn_recv_goaway(void) {
 
   nghttp3_conn_del(conn);
 
+  /* Server receives GOAWAY that claims a payload longer than a Push
+     ID */
+  nghttp3_buf_reset(&buf);
+  setup_default_server(&conn);
+
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_STREAM_TYPE_CONTROL);
+
+  fr.settings = (nghttp3_frame_settings){
+    .type = NGHTTP3_FRAME_SETTINGS,
+  };
+
+  nghttp3_write_frame(&buf, &fr);
+
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_FRAME_GOAWAY);
+  buf.last = nghttp3_put_uvarint(buf.last, 0x40000000);
+
+  nconsumed = nghttp3_conn_read_stream2(conn, 2, buf.pos, nghttp3_buf_len(&buf),
+                                        /* fin = */ 0, 0);
+
+  assert_ptrdiff(NGHTTP3_ERR_H3_FRAME_ERROR, ==, nconsumed);
+
+  nghttp3_conn_del(conn);
+
+  /* Server receives GOAWAY header that claims a payload longer than a
+     Push ID in 1 byte at a time */
+  nghttp3_buf_reset(&buf);
+  setup_default_server(&conn);
+
+  fr.settings = (nghttp3_frame_settings){
+    .type = NGHTTP3_FRAME_SETTINGS,
+  };
+
+  conn_read_control_stream(conn, 2, &fr);
+
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_FRAME_GOAWAY);
+  buf.last = nghttp3_put_uvarint(buf.last, 0x40000000);
+
+  for (i = 0; i < nghttp3_buf_len(&buf) - 1; ++i) {
+    nconsumed = nghttp3_conn_read_stream2(conn, 2, buf.pos + i, 1,
+                                          /* fin = */ 0, 0);
+
+    assert_ptrdiff(1, ==, nconsumed);
+  }
+
+  nconsumed = nghttp3_conn_read_stream2(conn, 2, buf.pos + i, 1,
+                                        /* fin = */ 0, 0);
+
+  assert_ptrdiff(NGHTTP3_ERR_H3_FRAME_ERROR, ==, nconsumed);
+
+  nghttp3_conn_del(conn);
+
+  /* Server receives GOAWAY whose Push ID takes 8 bytes */
+  nghttp3_buf_reset(&buf);
+  setup_default_server(&conn);
+
+  fr.settings = (nghttp3_frame_settings){
+    .type = NGHTTP3_FRAME_SETTINGS,
+  };
+
+  conn_read_control_stream(conn, 2, &fr);
+
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_FRAME_GOAWAY);
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_MAX_VARINTLEN);
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_MAX_VARINT);
+
+  nconsumed = nghttp3_conn_read_stream2(conn, 2, buf.pos, nghttp3_buf_len(&buf),
+                                        /* fin = */ 0, 0);
+
+  assert_ptrdiff((nghttp3_ssize)nghttp3_buf_len(&buf), ==, nconsumed);
+  assert_int64((int64_t)NGHTTP3_MAX_VARINT, ==, conn->rx.goaway_id);
+
+  nghttp3_conn_del(conn);
+
+  /* Client receives GOAWAY that claims a payload longer than a Stream
+     ID */
+  nghttp3_buf_reset(&buf);
+  setup_default_client(&conn);
+
+  fr.settings = (nghttp3_frame_settings){
+    .type = NGHTTP3_FRAME_SETTINGS,
+  };
+
+  conn_read_control_stream(conn, 3, &fr);
+
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_FRAME_GOAWAY);
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_MAX_VARINTLEN + 1);
+
+  nconsumed = nghttp3_conn_read_stream2(conn, 3, buf.pos, nghttp3_buf_len(&buf),
+                                        /* fin = */ 0, 0);
+
+  assert_ptrdiff(NGHTTP3_ERR_H3_FRAME_ERROR, ==, nconsumed);
+
+  nghttp3_conn_del(conn);
+
   /* Read GOAWAY in 1 byte at a time */
   nghttp3_buf_reset(&buf);
   setup_default_server(&conn);
@@ -7345,6 +7439,43 @@ void test_nghttp3_conn_push(void) {
                                         /* fin = */ 0, 0);
 
   assert_ptrdiff(NGHTTP3_ERR_H3_EXCESSIVE_LOAD, ==, nconsumed);
+
+  nghttp3_conn_del(conn);
+
+  /* Receiving MAX_PUSH_ID that claims a payload longer than a Push ID
+     from client is treated as error. */
+  nghttp3_buf_reset(&buf);
+  setup_default_server(&conn);
+
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_STREAM_TYPE_CONTROL);
+
+  nghttp3_write_frame(&buf, &fr);
+
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_FRAME_MAX_PUSH_ID);
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_MAX_VARINTLEN + 1);
+
+  nconsumed = nghttp3_conn_read_stream2(conn, 2, buf.pos, nghttp3_buf_len(&buf),
+                                        /* fin = */ 0, 0);
+
+  assert_ptrdiff(NGHTTP3_ERR_H3_FRAME_ERROR, ==, nconsumed);
+
+  nghttp3_conn_del(conn);
+
+  /* Receiving MAX_PUSH_ID whose Push ID takes 8 bytes from client */
+  nghttp3_buf_reset(&buf);
+  setup_default_server(&conn);
+
+  conn_read_control_stream(conn, 2, &fr);
+
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_FRAME_MAX_PUSH_ID);
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_MAX_VARINTLEN);
+  buf.last = nghttp3_put_uvarint(buf.last, NGHTTP3_MAX_VARINT);
+
+  nconsumed = nghttp3_conn_read_stream2(conn, 2, buf.pos, nghttp3_buf_len(&buf),
+                                        /* fin = */ 0, 0);
+
+  assert_ptrdiff((nghttp3_ssize)nghttp3_buf_len(&buf), ==, nconsumed);
+  assert_uint64(NGHTTP3_MAX_VARINT + 1, ==, conn->local.uni.max_pushes);
 
   nghttp3_conn_del(conn);
 }
