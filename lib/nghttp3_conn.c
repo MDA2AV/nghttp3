@@ -1036,6 +1036,10 @@ nghttp3_ssize nghttp3_conn_read_control(nghttp3_conn *conn,
         return (nghttp3_ssize)nconsumed;
       }
 
+      if (rstate->left) {
+        return NGHTTP3_ERR_H3_FRAME_ERROR;
+      }
+
       if (!conn->server && !nghttp3_client_stream_bidi((int64_t)rvint->acc)) {
         return NGHTTP3_ERR_H3_ID_ERROR;
       }
@@ -1077,6 +1081,10 @@ nghttp3_ssize nghttp3_conn_read_control(nghttp3_conn *conn,
       rstate->left -= (uint64_t)nread;
       if (rvint->left) {
         return (nghttp3_ssize)nconsumed;
+      }
+
+      if (rstate->left) {
+        return NGHTTP3_ERR_H3_FRAME_ERROR;
       }
 
       if (conn->local.uni.max_pushes > rvint->acc + 1) {
